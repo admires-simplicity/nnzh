@@ -1,0 +1,343 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "552aa5a8-1c05-4ab5-9653-656cb4c89428",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# name generation model\n",
+    "# based on this paper: https://www.jmlr.org/papers/volume3/bengio03a/bengio03a.pdf"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "f694b08d-9534-4b04-ab57-5ad37b89c24c",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import torch\n",
+    "import torch.nn.functional as F\n",
+    "import matplotlib.pyplot as plt # for making figures\n",
+    "%matplotlib inline"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "e918d40a-6dd5-4d61-a6f5-ea7d05a999df",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['emma', 'olivia', 'ava', 'isabella', 'sophia', 'charlotte', 'mia', 'amelia']"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# read  in all the words\n",
+    "words = open('names.txt', 'r').read().splitlines()\n",
+    "words[:8]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "fe49c448-a633-4076-9353-5d244ea8a0f6",
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "32033"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "len(words)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "97b384bf-c57e-4dce-ae24-6c9f51f7b0f4",
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "{1: 'a', 2: 'b', 3: 'c', 4: 'd', 5: 'e', 6: 'f', 7: 'g', 8: 'h', 9: 'i', 10: 'j', 11: 'k', 12: 'l', 13: 'm', 14: 'n', 15: 'o', 16: 'p', 17: 'q', 18: 'r', 19: 's', 20: 't', 21: 'u', 22: 'v', 23: 'w', 24: 'x', 25: 'y', 26: 'z', 0: '.'}\n",
+      "27\n"
+     ]
+    }
+   ],
+   "source": [
+    "# build the vocabulary of characters and mappings to/from integers\n",
+    "chars = sorted(list(set(''.join(words))))\n",
+    "stoi = {s:i+1 for i,s in enumerate(chars)}\n",
+    "stoi['.'] = 0\n",
+    "itos = {i:s for s,i in stoi.items()}\n",
+    "vocab_size = len(itos)\n",
+    "print(itos)\n",
+    "print(vocab_size)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "5004cf44-226d-4c23-a423-280db68ee8cd",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "torch.Size([182437, 3]) torch.Size([182437])\n",
+      "torch.Size([22781, 3]) torch.Size([22781])\n",
+      "torch.Size([22928, 3]) torch.Size([22928])\n"
+     ]
+    }
+   ],
+   "source": [
+    "block_size = 3 # context length: how many characters do we take to predict the next one?\n",
+    "\n",
+    "def build_dataset(words):\n",
+    "    X, Y = [], []\n",
+    "    for w in words:\n",
+    "        context = [0] * block_size\n",
+    "        for ch in w + '.':\n",
+    "            ix = stoi[ch]\n",
+    "            X.append(context)\n",
+    "            Y.append(ix)\n",
+    "            context = context[1:] + [ix] # crop first character and append, rolling window\n",
+    "\n",
+    "    X = torch.tensor(X)\n",
+    "    Y = torch.tensor(Y)\n",
+    "    print(X.shape, Y.shape)\n",
+    "    return X, Y\n",
+    "\n",
+    "import random\n",
+    "random.seed(42)\n",
+    "random.shuffle(words)\n",
+    "n1 = int(0.8*len(words))\n",
+    "n2 = int(0.9*len(words))\n",
+    "\n",
+    "Xtr, Ytr = build_dataset(words[:n1])\n",
+    "Xdev, Ydev = build_dataset(words[n1:n2])\n",
+    "Xte, Yte = build_dataset(words[n2:])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "adf87248-14c8-4fc2-ac4e-d46d3c345409",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "11897\n"
+     ]
+    }
+   ],
+   "source": [
+    "# same as MLP but with magic numbers put into variables\n",
+    "n_embd = 10   # dimensionality of character embedding vectors\n",
+    "n_hidden = 200 # number of neurons in hidden layer of the MLP\n",
+    "\n",
+    "g = torch.Generator().manual_seed(2 ** 31 - 1) # for reproducibility\n",
+    "C = torch.randn((vocab_size, n_embd),             generator=g)\n",
+    "W1 = torch.randn((n_embd * block_size, n_hidden), generator=g)\n",
+    "b1 = torch.randn(n_hidden,                        generator=g)\n",
+    "W2 = torch.randn((n_hidden, vocab_size),          generator=g)\n",
+    "b2 = torch.randn(vocab_size,                      generator=g)\n",
+    "\n",
+    "parameters = [C, W1, b1, W2, b2]\n",
+    "print(sum(p.nelement() for p in parameters)) # number of parameters in total\n",
+    "for p in parameters:\n",
+    "    p.requires_grad = True"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a9c3003e-1b6c-40db-a50c-438b6bfd9481",
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "      0/ 200000: 25.5262\n",
+      "  10000/ 200000: 1.8997\n",
+      "  20000/ 200000: 2.2309\n",
+      "  30000/ 200000: 2.5329\n",
+      "  40000/ 200000: 2.7642\n"
+     ]
+    }
+   ],
+   "source": [
+    "# same optimization as last time (refactored very slightly)\n",
+    "\n",
+    "max_steps = 200000\n",
+    "batch_size = 32\n",
+    "lossi = []\n",
+    "\n",
+    "for i in range(max_steps):   \n",
+    "    \n",
+    "    #minibatch construct\n",
+    "    ix = torch.randint(0, Xtr.shape[0], (batch_size,), generator=g)\n",
+    "    Xb, Yb = Xtr[ix], Ytr[ix]\n",
+    "\n",
+    "    # forward pass    \n",
+    "    emb = C[Xb] # embed the characters into vectors\n",
+    "    embcat = emb.view(emb.shape[0], -1) # concatenate the vectors\n",
+    "    hpreact = embcat @ W1 + b1 # hidden layer pre-activation\n",
+    "    h = torch.tanh(hpreact) # hidden layer\n",
+    "    logits = h @ W2 + b2 # output layer\n",
+    "    loss = F.cross_entropy(logits, Yb) # loss function\n",
+    "\n",
+    "    # backward pass\n",
+    "    for p in parameters:\n",
+    "        p.grad = None\n",
+    "    loss.backward()\n",
+    "    \n",
+    "    # update\n",
+    "    lr = 0.1 if i < 100000 else 0.01 # step learning rate decay\n",
+    "    for p in parameters:\n",
+    "        p.data += -lr * p.grad\n",
+    "        \n",
+    "    # track stats\n",
+    "    if i % 10000 == 0: \n",
+    "        print(f'{i:7d}/{max_steps:7d}: {loss.item():.4f}')\n",
+    "    lossi.append(loss.log10().item())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "9eab6246-b2af-40f4-81b9-5eecb167f1cb",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "plt.plot(lossi)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a4eefdb5-1eba-4c6f-8b09-aba412b83007",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "@torch.no_grad() # decorator disables gradient tracking\n",
+    "def split_loss(split):\n",
+    "    x, y = {\n",
+    "        'train': (Xtr, Ytr),\n",
+    "        'val': (Xdev, Ydev),\n",
+    "        'test': (Xte, Yte),\n",
+    "    }[split]\n",
+    "    emb = C[x] # (N, block_size, n_embd)\n",
+    "    embcat = emb.view(emb.shape[0], -1) # concat into (N, Block_size * n_embd)\n",
+    "    h = torch.tanh(embcat @ W1 + b1) # (N, n_hidden)\n",
+    "    logits = h @ W2 + b2 # (N, vocab_size)\n",
+    "    loss = F.cross_entropy(logits, y)\n",
+    "    print(split, loss.item())\n",
+    "\n",
+    "split_loss('train')\n",
+    "split_loss('val')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "47696b32-d58f-4caa-943b-76c4500acb5a",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "#sample from the model\n",
+    "g = torch.Generator().manual_seed(2 ** 31 - 1 + 10)\n",
+    "\n",
+    "for _ in range(20):\n",
+    "    \n",
+    "    out = []\n",
+    "    context = [0] * block_size\n",
+    "    while True:\n",
+    "        # forward pass the neural net\n",
+    "        emb = C[torch.tensor([context])] # (1, block_size, n_embd)\n",
+    "        h = torch.tanh(emb.view(1, -1) @ W1 + b1)\n",
+    "        logits = h @ W2 + b2\n",
+    "        probs = F.softmax(logits, dim=1)\n",
+    "        # sample from the distribution\n",
+    "        ix = torch.multinomial(probs, num_samples=1, generator=g).item()\n",
+    "        # shift context window and track the samples\n",
+    "        context = context[1:] + [ix]\n",
+    "        out.append(ix)\n",
+    "        if ix == 0:\n",
+    "            break\n",
+    "\n",
+    "    print(''.join(itos[i] for i in out)) # decode and print"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b215dd67-08bf-41b5-88fe-e8bbbe157d5a",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a2cf6def-7f71-4c7f-a765-9a078069e8ac",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "52de6ba1-f78c-48d5-b9d0-6db1f9d9bc47",
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3 (ipykernel)",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.11.5"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}

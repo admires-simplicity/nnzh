@@ -786,11 +786,13 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": 234,
    "id": "e103eda7-d14f-40c8-b523-219fa2eccac1",
    "metadata": {},
    "outputs": [],
-   "source": []
+   "source": [
+    "# I really feel like I have no clue what any of the stuff in this lecture means and I should revisit it later."
+   ]
   },
   {
    "cell_type": "code",

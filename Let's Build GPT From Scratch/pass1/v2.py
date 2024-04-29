@@ -21,6 +21,19 @@ output_len = 10000
 # so should take ~51m to train
 # ------------
 
+# # hyperparameter set 2
+# block_size = 64
+# n_embd = 128 # 128/4 = 32 -> every head is 32-dimensional
+# n_head = 4
+# n_layer = 12
+
+# hyperparameter set 3
+block_size = 16
+n_embd = 256 # 256/4 = 64 -> every head is 64-dimensional
+n_head = 4
+n_layer = 12
+
+
 
 torch.manual_seed(1337)
 
@@ -186,13 +199,17 @@ m = model.to(device)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+start_time = time.time()
+last_report_time = start_time
+
 # train loop
 for iter in range(max_iters):
 
     # periodically eval and report loss
     if iter % eval_interval == 0:
         losses = estimate_loss()
-        print(f'step {iter}, train loss: {losses["train"]:.4f}, val loss: {losses["val"]:.4f}')
+        print(f'step {iter}, train loss: {losses["train"]:.4f}, val loss: {losses["val"]:.4f, epoch time: {time.time() - last_report_time:.2f}s}')
+        last_report_time = time.time()
 
     # sample a batch
     xb, yb = get_batch('train')
@@ -202,6 +219,8 @@ for iter in range(max_iters):
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
     optimizer.step()
+
+print('total train time:', time.time() - start_time)
 
 # generate from model
 ctx = torch.zeros((1, 1), dtype=torch.long, device=device)

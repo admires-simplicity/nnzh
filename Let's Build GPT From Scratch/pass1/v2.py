@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import time
 
 # hyperparameters
 batch_size = 64
@@ -27,10 +28,14 @@ output_len = 10000
 # n_head = 4
 # n_layer = 12
 
-# hyperparameter set 3
-block_size = 16
-n_embd = 256 # 256/4 = 64 -> every head is 64-dimensional
-n_head = 4
+# # hyperparameter set 3
+# block_size = 16
+# n_embd = 256 # 256/4 = 64 -> every head is 64-dimensional
+# n_head = 4
+# n_layer = 12
+
+# hyperparameter set 4
+max_iters = 10000
 n_layer = 12
 
 
@@ -208,7 +213,7 @@ for iter in range(max_iters):
     # periodically eval and report loss
     if iter % eval_interval == 0:
         losses = estimate_loss()
-        print(f'step {iter}, train loss: {losses["train"]:.4f}, val loss: {losses["val"]:.4f, epoch time: {time.time() - last_report_time:.2f}s}')
+        print(f'step {iter}, train loss: {losses["train"]:.4f}, val loss: {losses["val"]:.4f}, epoch time: {time.time() - last_report_time:.2f}s')
         last_report_time = time.time()
 
     # sample a batch
